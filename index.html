@@ -40,7 +40,7 @@
   </div>
  </form>
 </section>
-<p class="foot">单词和顺序朗读优先使用 Wikimedia Commons 的美式真人录音（联网查询授权信息并直接在卡片内播放）。安卓默认仅真人录音，找不到或无法播放时会明确提示，可手动点「备用合成音」；关闭仅真人选项后才会自动回退到设备 en-US 合成语音。真人录音的作者、许可和来源在卡片下方展示；本站不修改或重新分发音频。例句仍使用浏览器语音。剑桥词典 US 是可选的外部对照链接，不会将剑桥录音嵌入本站。自定义单词和学习进度仅保存在当前浏览器。</p>
+<p class="foot">单词和顺序朗读优先使用 Wikimedia Commons 的美式真人录音（联网查询授权信息并直接在卡片内播放；部分已核实的词条提供直接音频入口）。安卓默认仅真人录音，找不到或无法播放时会明确提示，可手动点「备用合成音」；关闭仅真人选项后才会自动回退到设备 en-US 合成语音。真人录音的作者、许可和来源在卡片下方展示；本站不修改或重新分发音频。例句仍使用浏览器语音。剑桥词典 US 是可选的外部对照链接，不会将剑桥录音嵌入本站。自定义单词和学习进度仅保存在当前浏览器。</p>
 </div>
 <div class="toast" id="toast" role="status"></div>
 <script>
@@ -89,11 +89,15 @@ function render(){const items=all();$('total').textContent=items.length;$('maste
  const shown=filtered();$('count').textContent=`显示 ${shown.length} / ${items.length} 张卡片`;
  $('cards').innerHTML=shown.length?shown.map(x=>{let id=idOf(x),fav=!!state.favorites[id],done=!!state.mastered[id];return `<article class="card" data-id="${esc(id)}"><div class="card-top"><div><div class="word">${esc(x.w)}</div><div class="ipa">${esc(x.ipa||'（尚未填写音标）')}</div><div class="meaning">${esc(x.zh)}</div><span class="category">${esc(x.cat)}</span></div><button type="button" class="star ${fav?'on':''}" data-action="fav" title="${fav?'取消收藏':'收藏'}" aria-label="${fav?'取消收藏':'收藏'}">${fav?'★':'☆'}</button></div><div class="example"><div class="example-en">${esc(x.ex||'点击播放单词，练习发音。')}</div>${x.tr?`<div class="example-zh">${esc(x.tr)}</div>`:''}</div><div class="card-actions"><button class="play" type="button" data-action="word">▶ 美式真人发音</button><a class="play cambridge" data-provider="cambridge" href="${esc(cambridgeUrl(x.w))}" target="_blank" rel="noopener noreferrer" title="打开剑桥词典，点击 US 扬声器听美式真人发音" aria-label="在剑桥词典收听 ${esc(x.w)} 的美式真人发音">🎧 剑桥词典 US ↗</a>${x.ex?'<button class="play secondary" type="button" data-action="example">♫ 例句</button>':''}<button class="play secondary" type="button" data-action="tts" title="使用手机或电脑的合成语音，非真人录音">🔉 备用合成音</button><button type="button" class="done ${done?'yes':''}" data-action="done">${done?'✓ 已掌握':'○ 标记掌握'}</button>${x.customId?'<button class="delete" type="button" data-action="delete">删除</button>':''}</div><div class="audio-status" data-audio-status></div><div class="audio-credit" data-audio-credit hidden></div></article>`}).join(''):'<div class="empty">没有找到匹配的单词。可以清空搜索或切换分类。</div>';schedulePrefetch()}
 
-const audioCache=new Map(),audioReady=new Map();let activeAudio=null;
+const audioCache=new Map(),audioReady=new Map(),audioLookupFailures=new Set();let activeAudio=null;
+// Individually verified US-English recording. Commons file page provides creator and CC license.
+const verifiedUSAudio={
+ menu:{url:'https://commons.wikimedia.org/wiki/Special:Redirect/file/En-us-menu.ogg',page:'https://commons.wikimedia.org/wiki/File:En-us-menu.ogg',artist:'Dvortygirl',license:'CC BY-SA 3.0',licenseUrl:'https://creativecommons.org/licenses/by-sa/3.0/'}
+};
 function audioKey(word){return String(word||'').trim().toLowerCase().replace(/\s+/g,'-')}
 function showAudioStatus(card,message){const el=card?.querySelector('[data-audio-status]');if(el)el.textContent=message}
 function missingHumanAudio(x,card,onend){
- showAudioStatus(card,'暂无可用的美式真人录音。可点击「备用合成音」，或使用剑桥词典 US 对照。');
+ showAudioStatus(card,audioLookupFailures.has(audioKey(x.w))?'真人录音服务连接失败；请检查网络或稍后刷新重试。':'暂无可用的美式真人录音。可点击「备用合成音」，或使用剑桥词典 US 对照。');
  if(state.humanOnly){if(onend){stopSpeech();toast('顺序朗读已暂停：该词暂无真人录音。')}else toast('暂无真人录音，可点「备用合成音」。');return}
  showAudioCredit(card,null);utter(x.w,onend)
 }
@@ -106,13 +110,15 @@ function prefetchVisible(){
   loadHumanAudio(x.w).then(record=>{
    if(!card.isConnected)return;
    if(record)showAudioStatus(card,'✓ 真人录音已就绪，点击可在卡片内播放。');
-   else showAudioStatus(card,'○ 暂无匹配的真人录音；可选择备用合成音。');
+   else if(audioLookupFailures.has(audioKey(x.w)))showAudioStatus(card,'⚠ 真人录音服务暂时无法连接，可能是手机网络限制。');
+   else showAudioStatus(card,'○ 录音库中暂未找到可用的美式真人录音。');
   });
  }
 }
 function loadHumanAudio(word){
  const slug=audioKey(word);
  if(!/^[a-z]+(?:[-'][a-z]+)*$/.test(slug))return Promise.resolve(null);
+ if(Object.prototype.hasOwnProperty.call(verifiedUSAudio,slug)){const record=verifiedUSAudio[slug];audioReady.set(slug,record);return Promise.resolve(record)}
  if(audioCache.has(slug))return audioCache.get(slug);
  const pending=(async()=>{
   const names=['En-us-'+slug+'.ogg','En-us-'+slug+'.wav','En-us-'+slug+'.mp3','En-US-'+slug+'.ogg'];
@@ -136,7 +142,7 @@ function loadHumanAudio(word){
    return {url:info.url,page:info.descriptionurl,artist,license,licenseUrl};
   }
   return null;
- })().catch(()=>null);
+ })().catch(()=>{audioLookupFailures.add(slug);return null});
  const settled=pending.then(record=>{audioReady.set(slug,record);return record});
  audioCache.set(slug,settled);
  return settled;
@@ -197,12 +203,44 @@ function loadVoices(){
  preferredVoice=voices.slice().sort((a,b)=>rank(b)-rank(a))[0]||null;
 }
 if(synth){loadVoices();if('onvoiceschanged' in synth)synth.onvoiceschanged=loadVoices;setTimeout(loadVoices,700)}
-function stopSpeech(){speakToken++;state.playingAll=false;if(activeAudio){activeAudio.pause();activeAudio.removeAttribute('src');activeAudio.load();activeAudio=null}if(synth)synth.cancel();$('playAll').textContent='▶ 顺序朗读'}
-function utter(text,onend){if(!synth){toast('此浏览器不支持语音播放，请用 Chrome 或 Edge 打开。');return}const u=new SpeechSynthesisUtterance(text);u.lang='en-US';u.rate=Number(state.rate);u.pitch=1;const chosen=voices.find(v=>v.voiceURI===$('voice').value)||preferredVoice;if(chosen)u.voice=chosen;u.onend=()=>{if(onend)onend()};u.onerror=e=>{if(e.error!=='canceled'&&e.error!=='interrupted')toast('播放失败，请换一个发音人或检查设备音量。');if(onend)onend()};synth.speak(u)}
+function stopSpeech(){speakToken++;state.playingAll=false;if(activeAudio){activeAudio.pause();activeAudio.removeAttribute('src');activeAudio.load();activeAudio=null}if(synth&&(synth.speaking||synth.pending))synth.cancel();$('playAll').textContent='▶ 顺序朗读'}
+function utter(text,onend,card){
+ if(!synth||typeof SpeechSynthesisUtterance==='undefined'){
+  showAudioStatus(card,'此浏览器不支持例句语音。请在安卓设置中启用文字转语音服务。');
+  toast('当前浏览器没有可用的文字转语音服务。');return;
+ }
+ if(!voices.length)loadVoices();
+ const token=speakToken,u=new SpeechSynthesisUtterance(text);
+ u.lang='en-US';u.rate=Number(state.rate)||1;u.pitch=1;u.volume=1;
+ const chosen=voices.find(v=>v.voiceURI===$('voice').value)||preferredVoice;
+ if(chosen)u.voice=chosen;
+ let started=false,finished=false;
+ u.onstart=()=>{started=true;showAudioStatus(card,'🔉 正在朗读例句（安卓设备合成语音）')};
+ u.onend=()=>{finished=true;showAudioStatus(card,'✓ 例句朗读完成（设备合成语音）');if(token===speakToken&&onend)onend()};
+ u.onerror=e=>{
+  finished=true;
+  if(e.error==='canceled'||e.error==='interrupted')return;
+  showAudioStatus(card,'例句朗读失败：请检查安卓文字转语音引擎、英语（美国）语音包及媒体音量。');
+  toast('例句无声：请检查安卓的文字转语音引擎和美式英语语音包。');
+  if(token===speakToken&&onend)onend();
+ };
+ try{
+  synth.speak(u);
+  if(synth.paused)synth.resume();
+  setTimeout(()=>{
+   if(token!==speakToken||started||finished)return;
+   if(synth.paused)synth.resume();
+   showAudioStatus(card,'例句还未开始播放：请检查安卓文字转语音设置，或点击备用合成音测试。');
+  },3500);
+ }catch(_){
+  showAudioStatus(card,'无法启动例句语音。请在安卓设置中检查文字转语音引擎。');
+  toast('无法启动例句语音，请检查安卓文字转语音设置。');
+ }
+}
 function playOne(x,card){stopSpeech();playWord(x,card)}
 function playSequence(){if(state.playingAll){stopSpeech();return}stopSpeech();let list=filtered();if(!list.length){toast('没有可播放的卡片。');return}state.playingAll=true;$('playAll').textContent='■ 停止朗读';const token=++speakToken;let i=0;const next=()=>{if(token!==speakToken||!state.playingAll)return;if(i>=list.length){state.playingAll=false;$('playAll').textContent='▶ 顺序朗读';toast('本轮朗读完成！');return}{const x=list[i++];const card=Array.from(document.querySelectorAll('.card')).find(el=>el.dataset.id===idOf(x));playWord(x,card,next)}};next()}
 $('cards').addEventListener('pointerover',e=>{const btn=e.target.closest('button[data-action=word]');if(!btn)return;const card=btn.closest('.card');const x=all().find(item=>idOf(item)===card?.dataset.id);if(x)loadHumanAudio(x.w)});
-$('cards').addEventListener('click',e=>{const btn=e.target.closest('button[data-action]');if(!btn)return;const card=btn.closest('.card');const x=all().find(x=>idOf(x)===card.dataset.id);if(!x)return;const id=idOf(x);switch(btn.dataset.action){case'word':playOne(x,card);break;case'example':stopSpeech();showAudioStatus(card,'当前播放：设备合成语音（例句）');utter(x.ex);break;case'tts':stopSpeech();showAudioStatus(card,'当前播放：设备合成语音（非真人录音）');showAudioCredit(card,null);utter(x.w);break;case'fav':state.favorites[id]=!state.favorites[id];persist();render();break;case'done':state.mastered[id]=!state.mastered[id];persist();render();break;case'delete':if(confirm(`删除自定义卡片“${x.w}”？`)){state.custom=state.custom.filter(c=>idOf(c)!==id);delete state.favorites[id];delete state.mastered[id];persist();render()}break;}});
+$('cards').addEventListener('click',e=>{const btn=e.target.closest('button[data-action]');if(!btn)return;const card=btn.closest('.card');const x=all().find(x=>idOf(x)===card.dataset.id);if(!x)return;const id=idOf(x);switch(btn.dataset.action){case'word':playOne(x,card);break;case'example':stopSpeech();showAudioStatus(card,'准备朗读例句（设备合成语音）…');utter(x.ex,null,card);break;case'tts':stopSpeech();showAudioStatus(card,'准备使用设备合成语音朗读单词…');showAudioCredit(card,null);utter(x.w,null,card);break;case'fav':state.favorites[id]=!state.favorites[id];persist();render();break;case'done':state.mastered[id]=!state.mastered[id];persist();render();break;case'delete':if(confirm(`删除自定义卡片“${x.w}”？`)){state.custom=state.custom.filter(c=>idOf(c)!==id);delete state.favorites[id];delete state.mastered[id];persist();render()}break;}});
 $('filters').addEventListener('click',e=>{let b=e.target.closest('button[data-filter]');if(!b)return;state.filter=b.dataset.filter;render()});
 $('search').addEventListener('input',e=>{state.search=e.target.value;render()});
 $('humanOnly').checked=state.humanOnly;$('humanOnly').addEventListener('change',e=>{state.humanOnly=e.target.checked;persist();toast(state.humanOnly?'已启用仅真人录音模式':'已允许自动使用设备合成音')});
