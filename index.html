@@ -144,7 +144,7 @@ function loadHumanAudio(word){
 function showAudioCredit(card,record){
  const el=card?.querySelector('[data-audio-credit]');if(!el)return;
  el.hidden=false;el.replaceChildren();
- if(!record){el.textContent='此词暂无可用的美式真人录音，已使用浏览器美式语音。';return}
+ if(!record){el.textContent='当前使用设备合成语音（非真人录音）。';return}
  el.append(document.createTextNode('真人录音：'+record.artist+' · '+record.license+' · 未修改 · '));
  const source=document.createElement('a');source.href=record.page;source.target='_blank';source.rel='noopener noreferrer';source.textContent='Wikimedia Commons 来源及作者';el.append(source);
  if(record.licenseUrl){el.append(document.createTextNode(' · '));const lic=document.createElement('a');lic.href=record.licenseUrl;lic.target='_blank';lic.rel='noopener noreferrer';lic.textContent='许可协议';el.append(lic)}
