@@ -181,6 +181,9 @@ function playHumanAudio(record,x,card,onend){
 }
 function playWord(x,card,onend){
  const token=speakToken,key=audioKey(x.w);
+ if(Object.prototype.hasOwnProperty.call(verifiedUSAudio,key)){
+  playHumanAudio(verifiedUSAudio[key],x,card,onend);return;
+ }
  if(audioReady.has(key)){
   const record=audioReady.get(key);
   if(record)playHumanAudio(record,x,card,onend);else missingHumanAudio(x,card,onend);
