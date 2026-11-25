@@ -15,6 +15,8 @@
 .audio-credit a{color:#285ed7;text-decoration:underline}.audio-credit[hidden]{display:none}
 .card.audio-playing{border-color:#c7d7f5}.card.audio-playing [data-action=word]{box-shadow:0 0 0 3px rgba(40,94,215,.12)}
 .human-option{display:flex;align-items:center;gap:8px;font-size:12px;color:#385170;background:#eef4ff;border-radius:11px;padding:9px 12px}.human-option input{width:17px;height:17px;min-height:0;accent-color:#285ed7;flex:none}.done{margin-left:auto;border:1px solid #dce4ee;background:white;color:#68778c;border-radius:10px;padding:8px 10px;font-size:12px}.done.yes{background:var(--mint);border-color:#c5e8d8;color:var(--mintink)}.delete{border:0;background:transparent;color:#a04a4a;font-size:12px}.panel{margin-top:24px;background:white;border:1px solid var(--line);border-radius:17px;padding:19px 22px}.panel-head{display:flex;justify-content:space-between;gap:12px;align-items:center}.panel h2{font-size:17px;margin:0}.panel p{font-size:13px;color:var(--muted);margin:7px 0 0}.custom-fields{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-top:16px}.custom-fields .field{min-width:0}.custom-fields .span3{grid-column:span 3}.foot{font-size:12px;color:#758195;text-align:center;margin-top:20px}.empty{background:white;border:1px dashed #b9c8da;border-radius:15px;padding:36px;text-align:center;color:#718097;grid-column:1/-1}.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1e2c44;color:white;padding:10px 18px;border-radius:12px;font-size:13px;box-shadow:0 10px 30px #0003;display:none;z-index:20}.toast.show{display:block}@media(max-width:900px){.grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:600px){.wrap{padding:14px 13px 38px}.hero{padding:23px 20px;border-radius:19px}.grid{grid-template-columns:1fr;gap:12px}.card{min-height:0}.toolbar{margin-top:17px}.field{min-width:calc(50% - 7px)}.search{min-width:100%}.custom-fields{grid-template-columns:1fr}.custom-fields .span3{grid-column:span 1}.actions{width:100%}.actions button{flex:1}.note{font-size:11px}}@media(prefers-reduced-motion:reduce){.card{transition:none}.card:hover{transform:none}}
+
+.card-top>div{min-width:0}.example{overflow-wrap:anywhere}.panel-head{flex-wrap:wrap}.star,.delete{min-width:44px;min-height:44px}.toast{max-width:calc(100vw - 24px);width:max-content}.field{max-width:100%}@media(max-width:360px){.field{min-width:0;flex-basis:100%}.human-option{align-items:flex-start}}
 </style>
 </head>
 <body>
@@ -32,7 +34,7 @@
  <div class="actions"><button class="btn primary" id="playAll" type="button">▶ 顺序朗读</button><button class="btn" id="shuffle" type="button">⇄ 打乱</button></div>
  <label class="human-option" for="humanOnly"><input type="checkbox" id="humanOnly" />仅真人录音（安卓推荐；无录音时不自动使用手机合成音）</label>
 </div>
-<div class="subbar"><div class="filters" id="filters"></div><div class="note" id="count"></div></div>
+<div class="subbar"><div class="filters" id="filters"></div><div class="note" id="count" role="status"></div></div>
 <main class="grid" id="cards" aria-live="polite"></main>
 <section class="panel">
  <div class="panel-head"><div><h2>＋ 添加自己的单词</h2><p>以后学到的新单词，可以直接添加到这套卡片中。</p></div><button class="btn soft" id="toggleAdd" type="button" aria-expanded="false">添加单词</button></div>
@@ -81,9 +83,12 @@ const seed = [
 ];
 const KEY='american-pronunciation-deck-v1';
 let saved={};try{saved=JSON.parse(localStorage.getItem(KEY)||'{}')}catch(_){saved={}}
-const state={favorites:saved.favorites||{},mastered:saved.mastered||{},custom:Array.isArray(saved.custom)?saved.custom:[],rate:saved.rate||'1',humanOnly:typeof saved.humanOnly==='boolean'?saved.humanOnly:/Android/i.test(navigator.userAgent),filter:'全部',search:'',shuffle:false,playingAll:false};
+if(!saved||typeof saved!=='object'||Array.isArray(saved))saved={};
+const record=value=>value&&typeof value==='object'&&!Array.isArray(value)?value:{};
+const validCard=x=>x&&typeof x==='object'&&typeof x.w==='string'&&x.w.trim()&&typeof x.zh==='string'&&typeof x.customId==='string';
+const state={favorites:record(saved.favorites),mastered:record(saved.mastered),custom:Array.isArray(saved.custom)?saved.custom.filter(validCard):[],rate:['0.75','0.9','1','1.15'].includes(String(saved.rate))?String(saved.rate):'1',humanOnly:typeof saved.humanOnly==='boolean'?saved.humanOnly:/Android/i.test(navigator.userAgent),filter:'全部',search:'',shuffle:false,playingAll:false};
 const $=id=>document.getElementById(id);
-function persist(){try{localStorage.setItem(KEY,JSON.stringify({favorites:state.favorites,mastered:state.mastered,custom:state.custom,rate:state.rate,humanOnly:state.humanOnly}))}catch(_){}}
+function persist(){try{localStorage.setItem(KEY,JSON.stringify({favorites:state.favorites,mastered:state.mastered,custom:state.custom,rate:state.rate,humanOnly:state.humanOnly}))}catch(_){toast('保存失败：当前更改仅在本页有效，请勿关闭页面。')}}
 function all(){return seed.concat(state.custom)}
 function idOf(x){return x.customId||x.w.toLowerCase()}
 function cambridgeUrl(w){const word=String(w||'').trim().toLowerCase();return /^[a-z]+(?:[ -][a-z]+)*$/.test(word)?'https://dictionary.cambridge.org/dictionary/english/'+encodeURIComponent(word.replace(/\s+/g,'-')):'https://dictionary.cambridge.org/search/english/direct/?q='+encodeURIComponent(word)}
@@ -92,7 +97,7 @@ function filtered(){let items=all().filter(x=>{let id=idOf(x);let match=state.fi
 const shuffleMap=new Map();function shuffleRank(id){if(!shuffleMap.has(id))shuffleMap.set(id,Math.random());return shuffleMap.get(id)}
 function toast(msg){$('toast').textContent=msg;$('toast').classList.add('show');clearTimeout(toast.t);toast.t=setTimeout(()=>$('toast').classList.remove('show'),2300)}
 function render(){const items=all();$('total').textContent=items.length;$('mastered').textContent=items.filter(x=>state.mastered[idOf(x)]).length;$('favorites').textContent=items.filter(x=>state.favorites[idOf(x)]).length;
- const categories=['全部','餐厅点餐','日常表达','社会与法律','自定义','收藏','未掌握'];$('filters').innerHTML=categories.map(c=>`<button class="chip ${state.filter===c?'active':''}" type="button" data-filter="${esc(c)}">${esc(c)}</button>`).join('');
+ const categories=['全部','餐厅点餐','日常表达','社会与法律','自定义','收藏','未掌握'];$('filters').innerHTML=categories.map(c=>`<button class="chip ${state.filter===c?'active':''}" type="button" aria-pressed="${state.filter===c}" data-filter="${esc(c)}">${esc(c)}</button>`).join('');
  const shown=filtered();$('count').textContent=`显示 ${shown.length} / ${items.length} 张卡片`;
  $('cards').innerHTML=shown.length?shown.map(x=>{let id=idOf(x),fav=!!state.favorites[id],done=!!state.mastered[id];return `<article class="card" data-id="${esc(id)}"><div class="card-top"><div><div class="word">${esc(x.w)}</div><div class="ipa">${esc(x.ipa||'（尚未填写音标）')}</div><div class="meaning">${esc(x.zh)}</div><span class="category">${esc(x.cat)}</span></div><button type="button" class="star ${fav?'on':''}" data-action="fav" title="${fav?'取消收藏':'收藏'}" aria-label="${fav?'取消收藏':'收藏'}">${fav?'★':'☆'}</button></div><div class="example"><div class="example-en">${esc(x.ex||'点击播放单词，练习发音。')}</div>${x.tr?`<div class="example-zh">${esc(x.tr)}</div>`:''}</div><div class="card-actions"><button class="play" type="button" data-action="word">▶ 美式真人发音</button><a class="play cambridge" data-provider="cambridge" href="${esc(cambridgeUrl(x.w))}" target="_blank" rel="noopener noreferrer" title="打开剑桥词典，点击 US 扬声器听美式真人发音" aria-label="在剑桥词典收听 ${esc(x.w)} 的美式真人发音">🎧 剑桥词典 US ↗</a>${x.ex?'<button class="play secondary" type="button" data-action="example">♫ 例句</button>':''}<button class="play secondary" type="button" data-action="tts" title="使用手机或电脑的合成语音，非真人录音">🔉 备用合成音</button><button type="button" class="done ${done?'yes':''}" data-action="done">${done?'✓ 已掌握':'○ 标记掌握'}</button>${x.customId?'<button class="delete" type="button" data-action="delete">删除</button>':''}</div><div class="audio-meta"><span class="audio-status" data-audio-status role="status"></span><button class="audio-source" type="button" data-action="source" hidden aria-expanded="false" title="查看真人录音作者及许可">ⓘ 来源</button><div class="audio-credit" data-audio-credit hidden></div></div></article>`}).join(''):'<div class="empty">没有找到匹配的单词。可以清空搜索或切换分类。</div>';schedulePrefetch()}
 
@@ -275,3 +280,4 @@ render();
 </script>
 </body>
 </html>
+
